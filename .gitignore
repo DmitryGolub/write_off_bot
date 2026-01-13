@@ -1,5 +1,5 @@
 .idea/
 .venv/
 .env
-uploads/
+.data/
 __pycache__/
