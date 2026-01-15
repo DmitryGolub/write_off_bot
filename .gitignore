@@ -36,9 +36,6 @@ venv.bak/
 *.swo
 
 # Data
-.data/images/*/*
-!.data/images/*/.gitkeep
-.data/
 .DS_Store
 
 # Logs
