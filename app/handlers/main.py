@@ -1,9 +1,11 @@
 import re
 import time
-from typing import Dict, Set
+from typing import Dict
 
-from aiogram import Router, types, Bot
-from aiogram.filters import Command
+from aiogram import F, Router, types, Bot
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.db.repo import ExaminationTicketRepository
@@ -12,8 +14,11 @@ from app.services import ImageService
 router = Router()
 image_service = ImageService()
 user_last_request: Dict[int, float] = {}
-awaiting_first_task_search: Set[int] = set()
 COOLDOWN_SECONDS = 3
+
+
+class SearchByFirstTask(StatesGroup):
+    waiting_for_text = State()
 
 
 def normalize_search_tokens(value: str) -> list[str]:
@@ -32,24 +37,26 @@ def tokens_match(query_tokens: list[str], target_tokens: list[str]) -> bool:
 
 
 @router.message(Command("search_by_first_task"))
-async def search_by_first_task(message: types.Message):
-    awaiting_first_task_search.add(message.from_user.id)
+async def search_by_first_task(message: types.Message, state: FSMContext):
+    await state.set_state(SearchByFirstTask.waiting_for_text)
     await message.reply(
-        "Введите описание первого задания для поиска билета."
+        "Введите описание первого задания для поиска билета"
     )
 
 
-@router.message(lambda message: message.from_user and message.from_user.id in awaiting_first_task_search)
+@router.message(SearchByFirstTask.waiting_for_text, F.text & ~F.text.startswith("/"))
 async def handle_first_task_search(
     message: types.Message,
     bot: Bot,
     session: AsyncSession,
+    state: FSMContext,
 ):
     text = (message.text or "").strip()
-    if not text or text.startswith("/"):
+    if not text:
+        await state.clear()
         return
 
-    awaiting_first_task_search.discard(message.from_user.id)
+    await state.clear()
     query_tokens = normalize_search_tokens(text)
     if not query_tokens:
         await message.reply(
@@ -90,12 +97,9 @@ async def handle_first_task_search(
     )
 
 
-@router.message()
+@router.message(StateFilter(None))
 async def handle_ticket_number(message: types.Message, bot: Bot):
     """Обработчик чисел от 1 до 30"""
-    if message.from_user.id in awaiting_first_task_search:
-        return
-
     text = message.text.strip()
 
     if not text.isdigit():
