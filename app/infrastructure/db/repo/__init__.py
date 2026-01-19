@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.db.models import User
+from app.infrastructure.db.models import ExaminationTicket, User
 
 
 class UserRepository:
@@ -21,3 +21,13 @@ class UserRepository:
             await self.session.refresh(user)
 
         return user
+
+
+class ExaminationTicketRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def list_tickets(self) -> list[ExaminationTicket]:
+        stmt = select(ExaminationTicket).order_by(ExaminationTicket.number)
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
