@@ -14,7 +14,7 @@ user_last_request: Dict[int, float] = {}
 COOLDOWN_SECONDS = 3
 
 
-@router.message(Command("search_by_first_task"))
+@router.message(Command("list"))
 async def search_by_first_task(message: types.Message, session: AsyncSession):
     repo = ExaminationTicketRepository(session)
     tickets = await repo.list_tickets()
