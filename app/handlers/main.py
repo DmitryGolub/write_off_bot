@@ -1,11 +1,8 @@
-import re
 import time
 from typing import Dict
 
-from aiogram import F, Router, types, Bot
+from aiogram import Router, types, Bot
 from aiogram.filters import Command, StateFilter
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.db.repo import ExaminationTicketRepository
@@ -17,84 +14,22 @@ user_last_request: Dict[int, float] = {}
 COOLDOWN_SECONDS = 3
 
 
-class SearchByFirstTask(StatesGroup):
-    waiting_for_text = State()
-
-
-def normalize_search_tokens(value: str) -> list[str]:
-    text = value.casefold().replace("ё", "е").replace("π", "pi")
-    text = re.sub(r"[^a-zа-я0-9]+", " ", text)
-    return [token for token in text.split() if len(token) > 1]
-
-
-def tokens_match(query_tokens: list[str], target_tokens: list[str]) -> bool:
-    if not query_tokens:
-        return False
-    for token in query_tokens:
-        if not any(token in target for target in target_tokens):
-            return False
-    return True
-
-
 @router.message(Command("search_by_first_task"))
-async def search_by_first_task(message: types.Message, state: FSMContext):
-    await state.set_state(SearchByFirstTask.waiting_for_text)
-    await message.reply(
-        "Введите описание первого задания для поиска билета"
-    )
-
-
-@router.message(SearchByFirstTask.waiting_for_text, F.text & ~F.text.startswith("/"))
-async def handle_first_task_search(
-    message: types.Message,
-    bot: Bot,
-    session: AsyncSession,
-    state: FSMContext,
-):
-    text = (message.text or "").strip()
-    if not text:
-        await state.clear()
-        return
-
-    await state.clear()
-    query_tokens = normalize_search_tokens(text)
-    if not query_tokens:
-        await message.reply(
-            "Пожалуйста, введите описание первого задания текстом."
-        )
-        return
-
+async def search_by_first_task(message: types.Message, session: AsyncSession):
     repo = ExaminationTicketRepository(session)
     tickets = await repo.list_tickets()
-    matches = [
-        ticket.number
-        for ticket in tickets
-        if tokens_match(
-            query_tokens,
-            normalize_search_tokens(ticket.description_first_task),
-        )
+
+    if not tickets:
+        await message.reply("Список билетов пуст.")
+        return
+
+    lines = [
+        f"{ticket.number}. {ticket.description_first_task}"
+        for ticket in sorted(tickets, key=lambda t: t.number)
     ]
+    text = "\n".join(lines)
 
-    if not matches:
-        await message.reply(
-            f"билет с описанием первого задания ({text.lower()}) не найден"
-        )
-        return
-
-    if len(matches) > 1:
-        numbers = ", ".join(str(number) for number in sorted(matches))
-        await message.reply(
-            "По вашему запросу нашлось несколько билетов: "
-            f"{numbers}. Вы можете ввести запрос повторно "
-            "/search_by_first_task"
-        )
-        return
-
-    await image_service.send_ticket_images(
-        bot=bot,
-        chat_id=message.chat.id,
-        ticket_number=matches[0],
-    )
+    await message.reply(text)
 
 
 @router.message(StateFilter(None))
